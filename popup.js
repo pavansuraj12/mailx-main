@@ -5,92 +5,44 @@ document.addEventListener('DOMContentLoaded', () => {
   const emailSection = document.getElementById('email-section');
   const emailList = document.getElementById('email-list');
 
-  const deadlineKeywords = ["last date", "deadline", "apply by", "submission date"];
-  const dateRegex = /\b(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}|\b\d{4}[\/\-.]\d{1,2}[\/\-.]\d{1,2})\b/g;
-
-  // Function to determine color based on priority
-  function getColor(priority) {
-    if (priority >= 80) return 'green';
-    if (priority >= 50) return 'yellow';
-    return 'red';
-  }
-
   // Login Event
   loginBtn.addEventListener('click', async () => {
     try {
-      const { token, userInfo } = await authenticateWithGoogle();
-      console.log('Authentication successful:', userInfo);
+      const { token } = await authenticateWithGoogle();
 
       loginSection.classList.add('hidden');
       emailSection.classList.remove('hidden');
 
-      const emails = await fetchGmailMessages(token);
-      const today = new Date();
+      let emails = await fetchGmailMessages(token);
 
-      // Enhance and sort emails based on deadline and keywords
-      const enhancedEmails = emails.map((email) => {
-        const content = `${email.subject} ${email.body || ''}`.toLowerCase();
-        let dateAdjustment = 0;
-        let isDeadlineEmail = false;
+      // Sort emails by score (highest to lowest)
+      emails.sort((a, b) => b.score - a.score);
 
-        // Check for deadline-related keywords and extract dates
-        deadlineKeywords.forEach((keyword) => {
-          if (content.includes(keyword)) {
-            isDeadlineEmail = true;
-          }
-        });
-
-        const dates = [...content.matchAll(dateRegex)];
-        if (dates.length > 0) {
-          dates.forEach((match) => {
-            const date = new Date(match[0]);
-            if (!isNaN(date)) {
-              const daysRemaining = Math.ceil((date - today) / (1000 * 60 * 60 * 24));
-              if (daysRemaining >= 0) {
-                // Increase score based on proximity to the deadline
-                dateAdjustment += Math.max(100 - daysRemaining, 0);
-              }
-            }
-          });
-        }
-
-        // Boost score for emails containing deadline keywords
-        if (isDeadlineEmail) {
-          dateAdjustment += 50; // Add a static boost for deadline mentions
-        }
-
-        // Calculate total priority score
-        const totalScore = email.keywordScore + dateAdjustment;
-
-        return {
-          ...email,
-          dateAdjustment,
-          totalScore,
-        };
-      });
-
-      // Sort by total score (descending)
-      const sortedEmails = enhancedEmails.sort((a, b) => b.totalScore - a.totalScore);
-
-      // Calculate normalized priority
-      const maxScore = Math.max(...sortedEmails.map((email) => email.totalScore), 1);
-      const normalizedEmails = sortedEmails.map((email) => ({
-        ...email,
-        normalizedPriority: Math.ceil((email.totalScore / maxScore) * 100),
-      }));
-
-      // Render sorted emails
-      emailList.innerHTML = normalizedEmails
-        .map((email) => {
-          const color = getColor(email.normalizedPriority);
-          return `
-                      <div class="email-item" style="border-left: 5px solid ${color};">
-                          <h3>${email.subject}</h3>
-                          <p>Priority: ${email.normalizedPriority} (Keyword Score: ${email.keywordScore}, Date Adjustment: ${email.dateAdjustment})</p>
-                          <p>${new Date(parseInt(email.internalDate)).toLocaleString()}</p>
-                      </div>
-                  `;
-        })
+      // Render emails
+      emailList.innerHTML = emails
+        .map(
+          (email) => `
+          <div class="email-item">
+            <div class="email-header">
+              <span class="label ${email.label.toLowerCase()}">${email.label}</span>
+              <div class="score ${email.score > 80
+              ? 'green'
+              : email.score > 50
+                ? 'yellow'
+                : 'red'
+            }">${email.score}</div>
+            </div>
+            <h3 class="email-title">${email.subject}</h3>
+            <p class="email-info">Received: ${new Date(
+              parseInt(email.internalDate)
+            ).toLocaleString()}</p>
+            <div class="email-actions">
+              <button class="summarize" onclick="summarizeEmail('${email.id}')">Summarize</button>
+              <button class="view" onclick="viewEmail('${email.id}')">View Full Email</button>
+            </div>
+          </div>
+        `
+        )
         .join('');
     } catch (error) {
       console.error('Login failed:', error);
